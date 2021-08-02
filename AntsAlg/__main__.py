@@ -1,4 +1,4 @@
-from antsalg import AntsAlgorithm
+from antsalg2 import AntsAlgorithm
 
 if __name__ == "__main__":
     demo = AntsAlgorithm()
