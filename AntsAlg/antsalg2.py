@@ -14,16 +14,16 @@ DARKER_GREEN = (0, 180, 0)
 RED = (255, 0, 0)
 TILEWIDTH = 50
 
-NUM_OF_ANTS = 1
-NUM_OF_FOOD_SOURCES = 1
+NUM_OF_ANTS = 1000
+NUM_OF_FOOD_SOURCES = 10
 MIN_FOOD_AMOUNT = 500
 MAX_FOOD_AMOUNT = 1000
 WORLD_SIZE = 200
 
 RADIUS = 10
-CELL_SIZE = 10
-SIZE_X = 50
-SIZE_Y = 40
+CELL_SIZE = 2
+SIZE_X = 300
+SIZE_Y = 300
 
 RENDER_SIZE_X = SIZE_X * CELL_SIZE
 RENDER_SIZE_Y = SIZE_Y * CELL_SIZE
@@ -72,13 +72,13 @@ FOOD = 2
 PHEROMONE_NO_FOOD = 3
 PHEROMONE_FOOD = 4
 
-NO_FOOD_PHEROMONES_INCREASE = 60
-WITH_FOOD_PHEROMONES_INCREASE = 60
+NO_FOOD_PHEROMONES_INCREASE = 90
+WITH_FOOD_PHEROMONES_INCREASE = 90
 
 RANDOMIZE_POS_RANGE = 1000
 RANDOMIZE_POS_THRESHOLD = 900
 
-HORIZON_SIZE = 8
+HORIZON_SIZE = 5
 
 
 def is_main_direction(direction):
@@ -124,19 +124,22 @@ class Cell:
         self.type = CELL_TYPE_EMPTY
         self.nest = None
 
+    def __str__(self):
+        return f'({self.x} {self.y} no food: {self.visited_no_food_counter} with food: {self.visited_with_food_counter})'
+
     def draw(self, surface, size):
 
         if self.type == CELL_TYPE_EMPTY:
             return
-        if self.type == CELL_TYPE_PHEROMONES:
-            green_part = min(255, self.visited_with_food_counter)
-            blue_part = min(255, self.visited_no_food_counter)
-
-            if green_part == 0 and blue_part == 0:
-                return
-
-            color = (0, green_part, blue_part)
-            pygame.draw.rect(surface, color, (self.x * CELL_SIZE, self.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
+        # if self.type == CELL_TYPE_PHEROMONES:
+        #     green_part = min(255, self.visited_with_food_counter)
+        #     blue_part = min(255, self.visited_no_food_counter)
+        #
+        #     if green_part == 0 and blue_part == 0:
+        #         return
+        #
+        #     color = (0, green_part, blue_part)
+        #     pygame.draw.rect(surface, color, (self.x * CELL_SIZE, self.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
         if self.type == CELL_TYPE_FOOD:
             self.food.draw(surface)
@@ -199,14 +202,14 @@ class Grid:
     def inc_with_food_counter(self, x, y):
         if self.cells[y][x].type == CELL_TYPE_NEST or self.cells[y][x].type == CELL_TYPE_FOOD:
             return
-        
+
         self.cells[y][x].visited_with_food_counter += WITH_FOOD_PHEROMONES_INCREASE
         self.cells[y][x].type = CELL_TYPE_PHEROMONES
         self.non_empty_cells.add((x, y))
 
     def update(self):
         points_to_remove = []
-        print(f'non empty cells len: {len(self.non_empty_cells)}')
+        # print(f'non empty cells len: {len(self.non_empty_cells)}')
         for x, y in self.non_empty_cells:
             cell = self.cells[y][x]
             if cell.type == CELL_TYPE_PHEROMONES:
@@ -298,13 +301,16 @@ class Grid:
 
     def get_best_cell(self, direction, x_pos, y_pos, mode):
         ret_cells = []
-        # pheromone_predicate = lambda cell: cell.visited_no_food_counter
-        # if mode == MODE_TO_FOOD:
-        #     pheromone_predicate = lambda cell: cell.visited_with_food_counter
+        get_pheromone_level = lambda cell: cell.visited_no_food_counter
+        if mode == MODE_TO_FOOD:
+            get_pheromone_level = lambda cell: cell.visited_with_food_counter
 
         aim_predicate = lambda cell: cell.type == CELL_TYPE_NEST
         if mode == MODE_TO_FOOD:
             aim_predicate = lambda cell: cell.type == CELL_TYPE_FOOD
+
+        best_cell = None
+        max_pheromone_level = 0
 
         dir_x, dir_y = DIR_VECTORS[direction]
         if not is_main_direction(direction):
@@ -326,6 +332,10 @@ class Grid:
                     cell = self.cells[y_n_pos][x_n_pos]
                     if aim_predicate(cell):
                         return cell
+                    pheromone_level = get_pheromone_level(cell)
+                    if pheromone_level > max_pheromone_level:
+                        max_pheromone_level = pheromone_level
+                        best_cell = cell
         else:
             if dir_x == 0:
                 if dir_y > 0:
@@ -339,6 +349,10 @@ class Grid:
                             cell = self.cells[y_n_pos][x_n_pos]
                             if aim_predicate(cell):
                                 return cell
+                            pheromone_level = get_pheromone_level(cell)
+                            if pheromone_level > max_pheromone_level:
+                                max_pheromone_level = pheromone_level
+                                best_cell = cell
                 else:  # dir_y < 0
                     range_y = range(-HORIZON_SIZE+1, 0)
                     for y_ in range_y:
@@ -350,6 +364,10 @@ class Grid:
                             cell = self.cells[y_n_pos][x_n_pos]
                             if aim_predicate(cell):
                                 return cell
+                            pheromone_level = get_pheromone_level(cell)
+                            if pheromone_level > max_pheromone_level:
+                                max_pheromone_level = pheromone_level
+                                best_cell = cell
             else:  # dir_y == 0
                 if dir_x > 0:
                     range_x = range(1, HORIZON_SIZE)
@@ -362,6 +380,10 @@ class Grid:
                             cell = self.cells[y_n_pos][x_n_pos]
                             if aim_predicate(cell):
                                 return cell
+                            pheromone_level = get_pheromone_level(cell)
+                            if pheromone_level > max_pheromone_level:
+                                max_pheromone_level = pheromone_level
+                                best_cell = cell
                 else:  # dir_x < 0
                     range_x = range(-HORIZON_SIZE+1, 0)
                     for x_ in range_x:
@@ -373,8 +395,14 @@ class Grid:
                             cell = self.cells[y_n_pos][x_n_pos]
                             if aim_predicate(cell):
                                 return cell
+                            pheromone_level = get_pheromone_level(cell)
+                            if pheromone_level > max_pheromone_level:
+                                max_pheromone_level = pheromone_level
+                                best_cell = cell
         # print(f"s ret cells: {len(ret_cells)}")
-        return None
+        # print(best_cell)
+        # print(f'pher max: {max_pheromone_level}')
+        return best_cell
 
 
 class World:
@@ -406,6 +434,15 @@ class Food:
 
 MODE_TO_NEST = 0
 MODE_TO_FOOD = 1
+
+
+def print_ant_mode(ant):
+    mode_str = f'unknown'
+    if ant.mode == MODE_TO_NEST:
+        mode_str = "MODE_TO_NEST"
+    elif ant.mode == MODE_TO_FOOD:
+        mode_str = "MODE_TO_FOOD"
+    print(mode_str)
 
 
 class Ant:
@@ -456,14 +493,22 @@ class Ant:
 
     def update_position(self, neighbour_cells=[]):
         # print(f'update_position dir: {self.direction}')
-        if self.has_food:
-            self.grid.inc_with_food_counter(self.x, self.y)
-        else:
-            self.grid.inc_no_food_counter(self.x, self.y)
 
-        if self.in_nest and self.has_food:
-            self.in_nest = False
-            self.has_food = False
+        if self.mode == MODE_TO_FOOD:
+            if self.grid.cells[self.y][self.x].type == CELL_TYPE_FOOD:
+                self.mode = MODE_TO_NEST
+        elif self.mode == MODE_TO_NEST:
+            if self.grid.cells[self.y][self.x].type == CELL_TYPE_NEST:
+                self.mode = MODE_TO_FOOD
+
+        if self.mode == MODE_TO_NEST:
+            self.grid.inc_with_food_counter(self.x, self.y)
+        elif self.mode == MODE_TO_FOOD:
+            self.grid.inc_no_food_counter(self.x, self.y)
+        #
+        # if self.in_nest and self.has_food:
+        #     self.in_nest = False
+        #     self.has_food = False
 
         dir_x, dir_y = DIR_VECTORS[self.direction]
         self.x += dir_x
@@ -506,6 +551,7 @@ class Ant:
         # self.randomize_direction()
 
         # self.horizon_cells = self.grid.get_horizon_cells(self.direction, self.x, self.y)
+        # print_ant_mode(self)
         best_cell = self.grid.get_best_cell(self.direction, self.x, self.y, self.mode)
 
         if best_cell is not None:
@@ -573,7 +619,7 @@ class Ant:
 
     def draw(self, surface):
         color = YELLOW
-        if self.has_food:
+        if self.mode == MODE_TO_NEST:
             color = DARKER_GREEN
         pygame.draw.rect(surface, color, (self.x*CELL_SIZE, self.y*CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
@@ -652,7 +698,7 @@ class AntsAlgorithm:
         pygame.display.flip()
 
     def process_frame(self):
-        self.clock.tick(50)
+        self.clock.tick(500)
         self.process_input()
         self.process_logic()
         self.render_scene()
