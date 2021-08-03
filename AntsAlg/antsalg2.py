@@ -15,18 +15,21 @@ RED = (255, 0, 0)
 TILEWIDTH = 50
 
 NUM_OF_ANTS = 1000
-NUM_OF_FOOD_SOURCES = 10
+NUM_OF_FOOD_SOURCES = 1
+FOOD_SOURCE_SIZE = 40
 MIN_FOOD_AMOUNT = 500
 MAX_FOOD_AMOUNT = 1000
 WORLD_SIZE = 200
 
 RADIUS = 10
-CELL_SIZE = 2
-SIZE_X = 300
-SIZE_Y = 300
+CELL_SIZE = 4
+SIZE_X = 200
+SIZE_Y = 200
 
 RENDER_SIZE_X = SIZE_X * CELL_SIZE
 RENDER_SIZE_Y = SIZE_Y * CELL_SIZE
+
+DRAW_PHEROMONES = False
 
 # NW = 0
 # N = 1
@@ -131,21 +134,21 @@ class Cell:
 
         if self.type == CELL_TYPE_EMPTY:
             return
-        # if self.type == CELL_TYPE_PHEROMONES:
-        #     green_part = min(255, self.visited_with_food_counter)
-        #     blue_part = min(255, self.visited_no_food_counter)
-        #
-        #     if green_part == 0 and blue_part == 0:
-        #         return
-        #
-        #     color = (0, green_part, blue_part)
-        #     pygame.draw.rect(surface, color, (self.x * CELL_SIZE, self.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
+        if DRAW_PHEROMONES and self.type == CELL_TYPE_PHEROMONES:
+            green_part = min(255, self.visited_with_food_counter)
+            blue_part = min(255, self.visited_no_food_counter)
+
+            if green_part == 0 and blue_part == 0:
+                return
+
+            color = (0, green_part, blue_part)
+            pygame.draw.rect(surface, color, (self.x * CELL_SIZE, self.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
         if self.type == CELL_TYPE_FOOD:
-            self.food.draw(surface)
+            self.food.draw(surface, self.x, self.y)
 
         if self.type == CELL_TYPE_NEST:
-            self.nest.draw(surface)
+            self.nest.draw(surface, self.x, self.y)
 
     def has_pheromones(self):
         if self.visited_no_food_counter > 0 or self.visited_with_food_counter > 0:
@@ -154,13 +157,14 @@ class Cell:
 
 
 class Nest:
-    def __init__(self, x, y):
+    def __init__(self, x, y, radius=10):
         self.x = x
         self.y = y
-        print(f'create nest x: {self.x} y: {self.y}')
+        self.radius = radius
+        print(f'create nest x: {self.x} y: {self.y} radius: {self.radius}')
 
-    def draw(self, surface):
-        pygame.draw.rect(surface, RED, (self.x*CELL_SIZE, self.y*CELL_SIZE, CELL_SIZE, CELL_SIZE))
+    def draw(self, surface, x, y):
+        pygame.draw.rect(surface, RED, (x*CELL_SIZE, y*CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
 
 class Grid:
@@ -228,14 +232,38 @@ class Grid:
             self.non_empty_cells.remove(p)
 
     def set_food(self, food):
-        self.cells[food.y][food.x].food = food
-        self.cells[food.y][food.x].type = CELL_TYPE_FOOD
-        self.non_empty_cells.add((food.x, food.y))
+
+        begin_x = food.x
+        begin_y = food.y
+
+        for x_ in range(0, FOOD_SOURCE_SIZE):
+            for y_ in range(0, FOOD_SOURCE_SIZE):
+                x = begin_x + x_
+                y = begin_y + y_
+                if not self.is_valid_coord(x, y):
+                    continue
+                self.cells[y][x].food = food
+                self.cells[y][x].type = CELL_TYPE_FOOD
+                self.non_empty_cells.add((x, y))
 
     def set_nest(self, nest):
-        self.cells[nest.y][nest.x].nest = nest
-        self.cells[nest.y][nest.x].type = CELL_TYPE_NEST
-        self.non_empty_cells.add((nest.x, nest.y))
+
+        center_x = nest.x
+        center_y = nest.y
+        radius = nest.radius
+
+        for x_ in range(-radius, radius):
+            for y_ in range(-radius, radius):
+                x = center_x + x_
+                y = center_y + y_
+                dist = math.sqrt(x_*x_ + y_*y_)
+                if dist > radius:
+                    continue
+                if not self.is_valid_coord(x, y):
+                    continue
+                self.cells[y][x].nest = nest
+                self.cells[y][x].type = CELL_TYPE_NEST
+                self.non_empty_cells.add((x, y))
 
     def get_horizon_cells(self, direction, x_pos, y_pos):
         ret_cells = []
@@ -427,21 +455,29 @@ class Food:
         else:
             return True
 
-    def draw(self, surface):
+    def draw(self, surface, x, y):
         color = (0, min(255, self.amount/5), 0)
-        pygame.draw.rect(surface, color, (self.x*CELL_SIZE, self.y*CELL_SIZE, CELL_SIZE, CELL_SIZE))
+        pygame.draw.rect(surface, color, (x*CELL_SIZE, y*CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
 
 MODE_TO_NEST = 0
 MODE_TO_FOOD = 1
+MODE_LEAVING_NEST = 2
 
 
-def print_ant_mode(ant):
+def ant_mode_to_str(ant):
     mode_str = f'unknown'
     if ant.mode == MODE_TO_NEST:
         mode_str = "MODE_TO_NEST"
     elif ant.mode == MODE_TO_FOOD:
         mode_str = "MODE_TO_FOOD"
+    elif ant.mode == MODE_LEAVING_NEST:
+        mode_str = "MODE_LEAVING_NEST"
+    return mode_str
+
+
+def print_ant_mode(ant):
+    mode_str = ant_mode_to_str(ant)
     print(mode_str)
 
 
@@ -457,8 +493,11 @@ class Ant:
         self.grid = grid
         self.has_food = False
         self.in_nest = False
-        self.mode = MODE_TO_FOOD
+        self.mode = MODE_LEAVING_NEST
         self.horizon_cells = []
+
+    def __str__(self):
+        return f'ant x:{self.x} y: {self.y} dir: {self.direction} v {DIR_VECTORS[self.direction]} mode: {ant_mode_to_str(self)}'
 
     def get_int_pos(self):
         return math.floor(self.x), math.floor(self.y)
@@ -491,24 +530,54 @@ class Ant:
         elif self.direction == SE:
             self.direction = NE
 
+    def move_to_opposite_direction(self):
+        vec_x, vec_y = DIR_VECTORS[self.direction]
+        self.direction = VECTORS_TO_DIRS[(-vec_x, -vec_y)]
+        self.x += -vec_x
+        self.y += -vec_y
+
     def update_position(self, neighbour_cells=[]):
         # print(f'update_position dir: {self.direction}')
-
-        if self.mode == MODE_TO_FOOD:
-            if self.grid.cells[self.y][self.x].type == CELL_TYPE_FOOD:
-                self.mode = MODE_TO_NEST
-        elif self.mode == MODE_TO_NEST:
-            if self.grid.cells[self.y][self.x].type == CELL_TYPE_NEST:
+        # print(f' update {self}')
+        if self.mode == MODE_LEAVING_NEST:
+            # print(f'1 in nest {self}')
+            if self.grid.cells[self.y][self.x].type != CELL_TYPE_NEST:
+                # print(f'2 in nest {self}')
                 self.mode = MODE_TO_FOOD
-
-        if self.mode == MODE_TO_NEST:
-            self.grid.inc_with_food_counter(self.x, self.y)
+                # print(f'2.1 in nest {self}')
+                return
         elif self.mode == MODE_TO_FOOD:
-            self.grid.inc_no_food_counter(self.x, self.y)
+            # print(f'3 in nest {self}')
+            if self.grid.cells[self.y][self.x].type == CELL_TYPE_FOOD:
+                # print(f'4 in nest {self}')
+                self.mode = MODE_TO_NEST
+                self.move_to_opposite_direction()
+                # print(f'4.1 in nest {self}')
+                return
+            elif self.grid.cells[self.y][self.x].type == CELL_TYPE_NEST:
+                # print(f'5 in nest {self}')
+                self.move_to_opposite_direction()
+                # print(f'5.1 in nest {self}')
+                return
+        elif self.mode == MODE_TO_NEST:
+            # print(f'6 in nest {self}')
+            if self.grid.cells[self.y][self.x].type == CELL_TYPE_NEST:
+                # print(f'7 in nest {self}')
+                self.mode = MODE_TO_FOOD
+                self.move_to_opposite_direction()
+                # print(f'7.1 in nest {self}')
+                return
+
+        if random.randint(0, 100) > 30:
+            if self.mode == MODE_TO_NEST:
+                self.grid.inc_with_food_counter(self.x, self.y)
+            elif self.mode == MODE_TO_FOOD:
+                self.grid.inc_no_food_counter(self.x, self.y)
         #
         # if self.in_nest and self.has_food:
         #     self.in_nest = False
         #     self.has_food = False
+        self.update_direction()
 
         dir_x, dir_y = DIR_VECTORS[self.direction]
         self.x += dir_x
@@ -528,7 +597,7 @@ class Ant:
             self.y = self.world_size_y - 1
             self.mirror_dir_y()
 
-        self.update_direction()
+        # self.update_direction()
 
     def randomize_direction(self):
         # choice = random.choice([-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  1],)
@@ -552,6 +621,10 @@ class Ant:
 
         # self.horizon_cells = self.grid.get_horizon_cells(self.direction, self.x, self.y)
         # print_ant_mode(self)
+        val = random.randint(0, RANDOMIZE_POS_RANGE)
+        if val > RANDOMIZE_POS_THRESHOLD:
+            self.randomize_direction()
+            return
         best_cell = self.grid.get_best_cell(self.direction, self.x, self.y, self.mode)
 
         if best_cell is not None:
@@ -563,10 +636,6 @@ class Ant:
             direction = (int(diff_x/dist), int(diff_y/dist))
             # print(f'best dir: {direction}')
             self.direction = VECTORS_TO_DIRS[direction]
-            return
-        val = random.randint(0, RANDOMIZE_POS_RANGE)
-        if val > RANDOMIZE_POS_THRESHOLD:
-            self.randomize_direction()
             return
         return
 
@@ -641,8 +710,8 @@ class AntsAlgorithm:
         self.ants = self.create_ants()
 
     def create_nest(self):
-        nest = Nest(random.randint(0, int((self.world.size_x - 1) / 10)),
-                    random.randint(0, int((self.world.size_y - 1) / 10)))
+        nest = Nest(random.randint(10, int((self.world.size_x - 1) / 3)),
+                    random.randint(10, int((self.world.size_y - 1) / 3)))
         self.grid.set_nest(nest)
         self.nest = nest
 
@@ -665,9 +734,13 @@ class AntsAlgorithm:
             self.grid.set_food(food)
 
     def process_input(self):
+        global DRAW_PHEROMONES
         for event in pygame.event.get():
             if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 quit()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_p:
+                    DRAW_PHEROMONES = not DRAW_PHEROMONES
 
     def update_positions(self):
         for ant in self.ants:
